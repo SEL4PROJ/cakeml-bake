@@ -1,0 +1,7 @@
+[package]
+name = "bake"
+version = "0.1.0"
+authors = ["Michael Sproul <michael.sproul@data61.csiro.au>"]
+edition = "2018"
+
+[dependencies]
