@@ -1,3 +1,4 @@
+use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::{
@@ -7,6 +8,8 @@ use std::{
 };
 
 const REQUIRE_KEYWORD: &str = "require ";
+
+type DepGraph = Graph<String, ()>;
 
 struct ModuleTemplate {
     name: String,
@@ -119,6 +122,36 @@ fn collect_modules(
     }
 }
 
+/// Build a dependency graph from a set of modules.
+fn build_dep_graph(modules: &[&ModuleTemplate]) -> DepGraph {
+    let mut graph = Graph::new();
+
+    let mut indices = HashMap::new();
+
+    let basis_idx = graph.add_node("basis".to_string());
+    indices.insert("basis", basis_idx);
+
+    // Add nodes for all the modules
+    for module in modules {
+        let idx = graph.add_node(module.name.to_string());
+        indices.insert(module.name.as_str(), idx);
+    }
+
+    // Add dependencies as edges
+    for module in modules {
+        let mod_idx = *indices
+            .get(module.name.as_str())
+            .expect("module index not found");
+        for dep in &module.dependencies {
+            let dep_idx = *indices.get(dep.as_str()).expect("dep index not found");
+
+            graph.add_edge(mod_idx, dep_idx, ());
+        }
+    }
+
+    graph
+}
+
 impl Module {
     fn write_out(_filename: &str) -> Result<(), ()> {
         Ok(())
@@ -133,11 +166,17 @@ fn main() {
     let mut args: Vec<_> = env::args().collect();
 
     let name = args.pop().unwrap();
+    let _build_dir = args.pop().unwrap();
     let search_dirs = args;
 
     let module_templates = collect_modules(vec![name], &search_dirs).unwrap();
 
-    for (_, mt) in module_templates {
+    for (_, mt) in &module_templates {
         println!("{}, depends: {:?}", mt.name, mt.dependencies);
     }
+
+    let flat_modules: Vec<_> = module_templates.values().collect();
+    let dep_graph = build_dep_graph(&flat_modules);
+
+    println!("{:#?}", dep_graph);
 }

@@ -5,3 +5,4 @@ authors = ["Michael Sproul <michael.sproul@data61.csiro.au>"]
 edition = "2018"
 
 [dependencies]
+petgraph = "0.4"
