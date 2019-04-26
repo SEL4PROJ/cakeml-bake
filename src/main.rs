@@ -1,3 +1,4 @@
+use petgraph::algo::toposort;
 use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use std::{
 
 const REQUIRE_KEYWORD: &str = "require ";
 
+/// Directed dependency graph, with edges from modules to their dependencies.
 type DepGraph = Graph<String, ()>;
 
 struct ModuleTemplate {
@@ -152,6 +154,22 @@ fn build_dep_graph(modules: &[&ModuleTemplate]) -> DepGraph {
     graph
 }
 
+/// Compute a dependency-compatible linearisation of the dependency DAG.
+///
+/// Returns dependencies in bottom-up order, beginning with basis and proceeding
+/// to modules later in the chain.
+fn linearise_deps(deps: &DepGraph) -> Result<Vec<String>, ()> {
+    // Do a topological sort, which will give us the dependencies in top-down order,
+    // beginning from the last in the chain and ending in basis. Reverse to get the
+    // bottom-up ordering.
+    let mut linear_dep_idx = toposort(deps, None).map_err(|_| ())?;
+    linear_dep_idx.reverse();
+    Ok(linear_dep_idx
+        .into_iter()
+        .map(|node_idx| deps[node_idx].clone())
+        .collect())
+}
+
 impl Module {
     fn write_out(_filename: &str) -> Result<(), ()> {
         Ok(())
@@ -179,4 +197,8 @@ fn main() {
     let dep_graph = build_dep_graph(&flat_modules);
 
     println!("{:#?}", dep_graph);
+
+    let linear_deps = linearise_deps(&dep_graph);
+
+    println!("{:?}", linear_deps);
 }
