@@ -1,12 +1,10 @@
 use petgraph::algo::toposort;
 use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
+use std::env;
+use std::fs::File;
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::{
-    env,
-    fs::File,
-    io::{self, Read},
-};
 
 const REQUIRE_KEYWORD: &str = "require ";
 
@@ -57,22 +55,47 @@ impl ModuleTemplate {
         // TODO: multi-line requires?
         let mut requirements = vec![];
         for line in file_contents.lines() {
-            if line.starts_with(REQUIRE_KEYWORD) {
-                if line.ends_with(';') {
-                    requirements.extend(
-                        line.trim_start_matches(REQUIRE_KEYWORD)
-                            .trim_end_matches(';')
-                            .split_whitespace()
-                            .map(|s| s.to_string()),
-                    );
-                } else {
-                    eprintln!(
-                        "WARN: ignored line starting with `require` without terminating semi-colon"
-                    );
-                }
+            if Self::is_require_line(line) {
+                requirements.extend(
+                    line.trim_start_matches(REQUIRE_KEYWORD)
+                        .trim_end_matches(';')
+                        .split_whitespace()
+                        .map(|s| s.to_string()),
+                );
             }
         }
         requirements
+    }
+
+    fn is_require_line(line: &str) -> bool {
+        line.starts_with(REQUIRE_KEYWORD)
+    }
+
+    /// Replace all the require statements with a single `translation_extends` call to the
+    /// given parent module.
+    fn instantiate_parent(&self, parent_module: &str) -> Module {
+        // TODO: this is probably a rather inefficient way to do this
+        let mut new_contents = String::with_capacity(self.file_contents.len());
+        let mut parent_added = false;
+
+        for line in self.file_contents.lines() {
+            new_contents.push_str("\n");
+
+            if Self::is_require_line(line) {
+                if !parent_added {
+                    let trans_ext = format!("val _ = translation_extends \"{}\";", parent_module);
+                    new_contents.push_str(&trans_ext);
+                    parent_added = true;
+                }
+            } else {
+                new_contents.push_str(line);
+            }
+        }
+
+        Module {
+            name: self.name.clone(),
+            file_contents: new_contents,
+        }
     }
 }
 
@@ -170,21 +193,40 @@ fn linearise_deps(deps: &DepGraph) -> Result<Vec<String>, ()> {
         .collect())
 }
 
-impl Module {
-    fn write_out(_filename: &str) -> Result<(), ()> {
-        Ok(())
-    }
+/// Instantiate a collection of module templates according to a linearisation.
+///
+/// Return a list of modules with their parent links filled in according to the linearisation,
+/// ready for writing out to a file.
+fn instantiate_module_templates(
+    mut module_templates: HashMap<String, ModuleTemplate>,
+    linearisation: &[String],
+) -> Vec<Module> {
+    linearisation
+        .windows(2)
+        .map(|w| {
+            let parent_module = &w[0];
+            let module_name = &w[1];
+            let template = module_templates
+                .remove(module_name)
+                .expect("module missing");
+            template.instantiate_parent(parent_module)
+        })
+        .collect()
 }
 
-fn resolve_dependency_order(_module_templates: Vec<ModuleTemplate>) -> Vec<Module> {
-    vec![]
+impl Module {
+    /// Write the instantiated module to a file in the given directory.
+    fn write_out(&self, build_directory: &str) -> Result<(), io::Error> {
+        let mut file = File::create(format!("{}/{}Script.sml", build_directory, self.name))?;
+        file.write_all(self.file_contents.as_bytes())
+    }
 }
 
 fn main() {
     let mut args: Vec<_> = env::args().collect();
 
     let name = args.pop().unwrap();
-    let _build_dir = args.pop().unwrap();
+    let build_dir = args.pop().unwrap();
     let search_dirs = args;
 
     let module_templates = collect_modules(vec![name], &search_dirs).unwrap();
@@ -198,7 +240,15 @@ fn main() {
 
     println!("{:#?}", dep_graph);
 
-    let linear_deps = linearise_deps(&dep_graph);
+    let linear_deps = linearise_deps(&dep_graph).expect("dependency graph contains cycles!");
 
     println!("{:?}", linear_deps);
+
+    let instantiated_modules = instantiate_module_templates(module_templates, &linear_deps);
+
+    for module in instantiated_modules {
+        module.write_out(&build_dir).unwrap();
+    }
+
+    println!("done");
 }
