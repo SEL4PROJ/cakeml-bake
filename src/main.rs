@@ -12,8 +12,13 @@ const REQUIRE_KEYWORD: &str = "require ";
 type DepGraph = Graph<String, ()>;
 
 struct ModuleTemplate {
+    /// Name of this module.
     name: String,
+    /// Path to the source file of this module template.
+    file_location: PathBuf,
+    /// Contents of the template file.
     file_contents: String,
+    /// List of modules upon which this module depends.
     dependencies: Vec<String>,
 }
 
@@ -37,6 +42,7 @@ impl ModuleTemplate {
     fn load_file(module_name: &str, module_path: &Path) -> Result<Self, io::Error> {
         let mut module_template = ModuleTemplate {
             name: module_name.into(),
+            file_location: module_path.into(),
             file_contents: String::new(),
             dependencies: vec![],
         };
@@ -232,7 +238,10 @@ fn main() {
     let module_templates = collect_modules(vec![name], &search_dirs).unwrap();
 
     for (_, mt) in &module_templates {
-        println!("{}, depends: {:?}", mt.name, mt.dependencies);
+        println!(
+            "{}, depends: {:?}, from: {:?}",
+            mt.name, mt.dependencies, mt.file_location
+        );
     }
 
     let flat_modules: Vec<_> = module_templates.values().collect();
