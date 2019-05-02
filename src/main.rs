@@ -27,9 +27,8 @@ struct Module {
     file_contents: String,
 }
 
-fn module_path(module_name: &str, dir_path: &str) -> Result<PathBuf, ()> {
-    let filename = format!("{}/{}Script.sml", dir_path, module_name);
-    let path = PathBuf::from(filename);
+fn module_path(module_name: &str, dir_path: &Path) -> Result<PathBuf, ()> {
+    let path = dir_path.join(format!("{}Script.sml", module_name));
 
     if path.is_file() {
         Ok(path)
@@ -107,10 +106,9 @@ impl ModuleTemplate {
 
 /// Given a list of entry-point modules (usually just one), and a list of directories to search,
 /// gather the collection of modules required (entry points and their dependencies)
-// TODO: use Path/PathBuf for the search directories
 fn collect_modules(
     entry_points: Vec<String>,
-    search_paths: &[String],
+    search_paths: &[&Path],
 ) -> Result<HashMap<String, ModuleTemplate>, Vec<String>> {
     let mut modules = HashMap::new();
     let mut modules_to_find = VecDeque::from(entry_points);
@@ -233,7 +231,9 @@ fn main() {
 
     let name = args.pop().unwrap();
     let build_dir = args.pop().unwrap();
-    let search_dirs = args;
+
+    // TODO: check that search directories exist
+    let search_dirs = args.iter().map(Path::new).collect::<Vec<_>>();
 
     let module_templates = collect_modules(vec![name], &search_dirs).unwrap();
 
