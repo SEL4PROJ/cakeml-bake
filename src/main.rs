@@ -5,6 +5,7 @@ use std::env;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use tera::{Context, Tera};
 
 const REQUIRE_KEYWORD: &str = "require ";
 
@@ -27,10 +28,12 @@ struct Module {
     file_contents: String,
 }
 
-fn module_path(module_name: &str, dir_path: &Path) -> Result<PathBuf, ()> {
-    let path = dir_path.join(format!("{}Script.sml", module_name));
+fn module_path(module_name: &str, dir_path: &Path) -> PathBuf {
+    dir_path.join(format!("{}Script.sml", module_name))
+}
 
-    if path.is_file() {
+fn file_path<P: AsRef<Path>>(path: P) -> Result<P, ()> {
+    if path.as_ref().is_file() {
         Ok(path)
     } else {
         Err(())
@@ -116,8 +119,8 @@ fn collect_modules(
 
     while let Some(module_name) = modules_to_find.pop_front() {
         for dep_directory in search_paths {
-            if let Ok(module_template) =
-                module_path(&module_name, dep_directory).and_then(|mod_path| {
+            if let Ok(module_template) = file_path(module_path(&module_name, dep_directory))
+                .and_then(|mod_path| {
                     ModuleTemplate::load_file(&module_name, &mod_path).map_err(|_| ())
                 })
             {
@@ -220,17 +223,47 @@ fn instantiate_module_templates(
 
 impl Module {
     /// Write the instantiated module to a file in the given directory.
-    fn write_out(&self, build_directory: &str) -> Result<(), io::Error> {
-        let mut file = File::create(format!("{}/{}Script.sml", build_directory, self.name))?;
+    fn write_out(&self, build_directory: &Path) -> Result<(), io::Error> {
+        let mut file = File::create(module_path(&self.name, build_directory))?;
         file.write_all(self.file_contents.as_bytes())
     }
+}
+
+/// Load meta-templates required to generate the build module.
+fn load_build_templates() -> Result<Tera, tera::Error> {
+    let mut tera = Tera::default();
+    tera.add_raw_template("buildScript.sml", include_str!("templates/buildScript.sml"))?;
+    tera.add_raw_template("Holmakefile", include_str!("templates/Holmakefile"))?;
+    Ok(tera)
+}
+
+fn sexpr_path(build_dir: &Path) -> Result<PathBuf, io::Error> {
+    Ok(build_dir.canonicalize()?.join("program.sexp"))
+}
+
+fn create_build_script(
+    build_dir: &Path,
+    terminal_module: &str,
+    entry_function: &str,
+    tera: &Tera,
+) -> Result<(), io::Error> {
+    let mut file = File::create(module_path("build", build_dir))?;
+
+    let mut context = Context::default();
+    context.insert("terminal_module", terminal_module);
+    context.insert("entry_function", entry_function);
+    context.insert("sexpr_file", &sexpr_path(build_dir)?.to_string_lossy());
+
+    // FIXME: error handling
+    let file_contents = tera.render("buildScript.sml", &context).unwrap();
+    file.write_all(file_contents.as_bytes())
 }
 
 fn main() {
     let mut args: Vec<_> = env::args().collect();
 
     let name = args.pop().unwrap();
-    let build_dir = args.pop().unwrap();
+    let build_dir = PathBuf::new().join(args.pop().unwrap());
 
     // TODO: check that search directories exist
     let search_dirs = args.iter().map(Path::new).collect::<Vec<_>>();
@@ -258,6 +291,12 @@ fn main() {
     for module in instantiated_modules {
         module.write_out(&build_dir).unwrap();
     }
+
+    let tera = load_build_templates().unwrap();
+    let terminal_module = linear_deps.last().unwrap();
+    // FIXME: configurable entry point
+    let entry_function = "main";
+    create_build_script(&build_dir, terminal_module, entry_function, &tera).unwrap();
 
     println!("done");
 }
