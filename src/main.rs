@@ -1,11 +1,14 @@
+use self::cli::Opts;
 use petgraph::algo::toposort;
 use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
-use std::env;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use structopt::StructOpt;
 use tera::{Context, Tera};
+
+mod cli;
 
 const REQUIRE_KEYWORD: &str = "require ";
 
@@ -110,11 +113,11 @@ impl ModuleTemplate {
 /// Given a list of entry-point modules (usually just one), and a list of directories to search,
 /// gather the collection of modules required (entry points and their dependencies)
 fn collect_modules(
-    entry_points: Vec<String>,
-    search_paths: &[&Path],
+    entry_points: &[String],
+    search_paths: &[PathBuf],
 ) -> Result<HashMap<String, ModuleTemplate>, Vec<String>> {
     let mut modules = HashMap::new();
-    let mut modules_to_find = VecDeque::from(entry_points);
+    let mut modules_to_find = VecDeque::from(entry_points.to_vec());
     let mut missing_modules = vec![];
 
     while let Some(module_name) = modules_to_find.pop_front() {
@@ -262,7 +265,7 @@ fn create_build_script(
 fn create_holmakefile(
     build_dir: &Path,
     cakeml_dir: &Path,
-    include_dirs: &[&Path],
+    include_dirs: &[PathBuf],
     tera: &Tera,
 ) -> Result<(), io::Error> {
     let mut file = File::create(build_dir.join("Holmakefile"))?;
@@ -282,15 +285,11 @@ fn create_holmakefile(
 }
 
 fn main() {
-    let mut args: Vec<_> = env::args().collect();
+    let opts = Opts::from_args();
 
-    let name = args.pop().unwrap();
-    let build_dir = PathBuf::new().join(args.pop().unwrap());
+    println!("{:?}", opts);
 
-    // TODO: check that search directories exist
-    let search_dirs = args.iter().map(Path::new).collect::<Vec<_>>();
-
-    let module_templates = collect_modules(vec![name], &search_dirs).unwrap();
+    let module_templates = collect_modules(&opts.module_names, &opts.search_dirs).unwrap();
 
     for (_, mt) in &module_templates {
         println!(
@@ -311,24 +310,13 @@ fn main() {
     let instantiated_modules = instantiate_module_templates(module_templates, &linear_deps);
 
     for module in instantiated_modules {
-        module.write_out(&build_dir).unwrap();
+        module.write_out(&opts.build_dir).unwrap();
     }
 
     let tera = load_build_templates().unwrap();
     let terminal_module = linear_deps.last().unwrap();
-    // FIXME: configurable entry point
-    let entry_function = "main";
-    create_build_script(&build_dir, terminal_module, entry_function, &tera).unwrap();
-
-    // FIXME: configurable
-    let cakeml_dir = Path::new("/home/msproul/cake-latest/cakeml/");
-    let include_dirs = vec![
-        Path::new(
-            "/home/msproul/camkes-cakeml/build/projects/cakeml/apps/cakeml-filter/meta_utils",
-        ),
-        Path::new("/$(HOLDIR)/examples/formal-languages/regular"),
-    ];
-    create_holmakefile(&build_dir, cakeml_dir, &include_dirs, &tera).unwrap();
+    create_build_script(&opts.build_dir, terminal_module, &opts.entry_point, &tera).unwrap();
+    create_holmakefile(&opts.build_dir, &opts.cakeml_dir, &opts.hol_includes, &tera).unwrap();
 
     println!("done");
 }
