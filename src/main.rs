@@ -259,6 +259,28 @@ fn create_build_script(
     file.write_all(file_contents.as_bytes())
 }
 
+fn create_holmakefile(
+    build_dir: &Path,
+    cakeml_dir: &Path,
+    include_dirs: &[&Path],
+    tera: &Tera,
+) -> Result<(), io::Error> {
+    let mut file = File::create(build_dir.join("Holmakefile"))?;
+
+    let string_include_dirs = include_dirs
+        .iter()
+        .map(|p| p.to_string_lossy())
+        .collect::<Vec<_>>();
+
+    let mut context = Context::default();
+    context.insert("cakeml_dir", &cakeml_dir.to_string_lossy());
+    context.insert("include_dirs", &string_include_dirs);
+
+    // FIXME: error handling
+    let file_contents = tera.render("Holmakefile", &context).unwrap();
+    file.write_all(file_contents.as_bytes())
+}
+
 fn main() {
     let mut args: Vec<_> = env::args().collect();
 
@@ -297,6 +319,16 @@ fn main() {
     // FIXME: configurable entry point
     let entry_function = "main";
     create_build_script(&build_dir, terminal_module, entry_function, &tera).unwrap();
+
+    // FIXME: configurable
+    let cakeml_dir = Path::new("/home/msproul/cake-latest/cakeml/");
+    let include_dirs = vec![
+        Path::new(
+            "/home/msproul/camkes-cakeml/build/projects/cakeml/apps/cakeml-filter/meta_utils",
+        ),
+        Path::new("/$(HOLDIR)/examples/formal-languages/regular"),
+    ];
+    create_holmakefile(&build_dir, cakeml_dir, &include_dirs, &tera).unwrap();
 
     println!("done");
 }
