@@ -1,3 +1,4 @@
+use self::binary_compiler::BinaryCompiler;
 use self::cli::Opts;
 use self::holmake::Holmake;
 use petgraph::algo::toposort;
@@ -9,11 +10,14 @@ use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 use tera::{Context, Tera};
 
+mod binary_compiler;
 mod cli;
 mod holmake;
 
 const BASIS: &str = "basisProg";
 const REQUIRE_KEYWORD: &str = "require ";
+const SEXPR_FILENAME: &str = "program.sexp";
+const ASM_FILENAME: &str = "program.S";
 
 /// Directed dependency graph, with edges from modules to their dependencies.
 type DepGraph = Graph<String, ()>;
@@ -243,14 +247,15 @@ fn load_build_templates() -> Result<Tera, tera::Error> {
     Ok(tera)
 }
 
-fn sexpr_path(build_dir: &Path) -> Result<PathBuf, io::Error> {
-    Ok(build_dir.canonicalize()?.join("program.sexp"))
+fn get_sexpr_path(build_dir: &Path) -> Result<PathBuf, io::Error> {
+    Ok(build_dir.canonicalize()?.join(SEXPR_FILENAME))
 }
 
 fn create_build_script(
     build_dir: &Path,
     terminal_module: &str,
     entry_function: &str,
+    sexpr_path: &Path,
     tera: &Tera,
 ) -> Result<(), io::Error> {
     let mut file = File::create(module_path("build", build_dir))?;
@@ -258,7 +263,7 @@ fn create_build_script(
     let mut context = Context::default();
     context.insert("terminal_module", terminal_module);
     context.insert("entry_function", entry_function);
-    context.insert("sexpr_file", &sexpr_path(build_dir)?.to_string_lossy());
+    context.insert("sexpr_file", &sexpr_path.to_string_lossy());
 
     // FIXME: error handling
     let file_contents = tera.render("buildScript.sml", &context).unwrap();
@@ -318,11 +323,22 @@ fn main() {
 
     let tera = load_build_templates().unwrap();
     let terminal_module = linear_deps.last().unwrap();
-    create_build_script(&opts.build_dir, terminal_module, &opts.entry_point, &tera).unwrap();
+    let sexpr_path = get_sexpr_path(&opts.build_dir).unwrap();
+    create_build_script(
+        &opts.build_dir,
+        terminal_module,
+        &opts.entry_point,
+        &sexpr_path,
+        &tera,
+    )
+    .unwrap();
     create_holmakefile(&opts.build_dir, &opts.cakeml_dir, &opts.hol_includes, &tera).unwrap();
 
     let holmake = Holmake::new(&opts.holmake);
     holmake.run(&opts.build_dir).unwrap();
 
-    println!("done");
+    BinaryCompiler::new(&opts.cakeml_bin)
+        .sexp(true)
+        .compile(&sexpr_path, &opts.build_dir, ASM_FILENAME)
+        .expect("binary compiler failed");
 }

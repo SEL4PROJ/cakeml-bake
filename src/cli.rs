@@ -27,7 +27,12 @@ pub struct Opts {
     pub hol_includes: Vec<PathBuf>,
     /// Path to Holmake binary
     ///
-    /// Will use the Holmake from $PATH if none is provided
+    /// Will use the `Holmake` from $PATH if none is provided
     #[structopt(long, default_value = "Holmake")]
     pub holmake: PathBuf,
+    /// Path to CakeML compiler binary
+    ///
+    /// Will use the `cake` from $PATH if none is provided
+    #[structopt(long, default_value = "cake")]
+    pub cakeml_bin: PathBuf,
 }
