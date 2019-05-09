@@ -14,7 +14,6 @@ pub struct Opts {
     #[structopt(long)]
     pub build_dir: PathBuf,
     /// Top-level CakeML function to run when the program executes
-    // FIXME: this might depend on which module is last in the chain...
     #[structopt(long, default_value = "main")]
     pub entry_point: String,
     /// Path to a checkout of the CakeML compiler repository

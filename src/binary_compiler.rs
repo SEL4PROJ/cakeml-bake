@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -36,13 +36,9 @@ impl BinaryCompiler {
     }
 
     /// Pipe the contents of `input` into the compiler
-    pub fn compile(
-        &self,
-        input: &Path,
-        build_dir: &Path,
-        output_name: &str,
-    ) -> Result<(), io::Error> {
-        let input_file = File::open(input)?;
+    pub fn compile(&self, input: &Path, build_dir: &Path, output_name: &str) -> Result<(), String> {
+        let input_file = File::open(input)
+            .map_err(|e| format!("Failed to read {:?} for compilation: {}", input, e))?;
 
         let output = Command::new(&self.path)
             .arg(format!("--sexp={}", self.sexp))
@@ -51,18 +47,19 @@ impl BinaryCompiler {
             .arg(format!("--stack_size={}", self.stack_size))
             .arg(format!("--target={}", self.target))
             .stdin(input_file)
-            .output()?;
+            .output()
+            .map_err(|e| format!("Failed to execute CakeML binary compiler: {}", e))?;
 
         if output.stdout.is_empty() {
-            panic!(
-                "CakeML binary compiler failed with output:\n{}",
+            return Err(format!(
+                "Error: CakeML binary compiler failed with stderr:\n{}",
                 String::from_utf8_lossy(&output.stderr)
-            );
+            ));
         }
 
-        let mut output_file = File::create(build_dir.join(output_name))?;
-        output_file.write_all(&output.stdout)?;
-
-        Ok(())
+        let output_filename = build_dir.join(output_name);
+        File::create(&output_filename)
+            .and_then(|mut f| f.write_all(&output.stdout))
+            .map_err(|e| format!("Error writing output file {:?}: {}", output_filename, e))
     }
 }

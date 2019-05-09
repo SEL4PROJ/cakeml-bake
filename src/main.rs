@@ -1,9 +1,13 @@
+#[macro_use]
+extern crate log;
+
 use self::binary_compiler::BinaryCompiler;
 use self::cli::Opts;
 use self::holmake::Holmake;
 use petgraph::algo::toposort;
 use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -18,6 +22,9 @@ const BASIS: &str = "basisProg";
 const REQUIRE_KEYWORD: &str = "require ";
 const SEXPR_FILENAME: &str = "program.sexp";
 const ASM_FILENAME: &str = "program.S";
+
+const T_BUILD: &str = "buildScript.sml";
+const T_HOLMAKE: &str = "Holmakefile";
 
 /// Directed dependency graph, with edges from modules to their dependencies.
 type DepGraph = Graph<String, ()>;
@@ -59,7 +66,7 @@ impl ModuleTemplate {
             dependencies: vec![],
         };
 
-        println!("filename is: {:?}", module_path);
+        debug!("filename is: {:?}", module_path);
         let mut f = File::open(module_path)?;
         f.read_to_string(&mut module_template.file_contents)?;
 
@@ -122,7 +129,7 @@ impl ModuleTemplate {
 fn collect_modules(
     entry_points: &[String],
     search_paths: &[PathBuf],
-) -> Result<HashMap<String, ModuleTemplate>, Vec<String>> {
+) -> Result<HashMap<String, ModuleTemplate>, String> {
     let mut modules = HashMap::new();
     let mut modules_to_find = VecDeque::from(entry_points.to_vec());
     let mut missing_modules = vec![];
@@ -152,7 +159,6 @@ fn collect_modules(
         }
 
         if !modules.contains_key(&module_name) {
-            println!("couldn't find {} module", module_name);
             missing_modules.push(module_name.to_string());
         }
     }
@@ -160,7 +166,10 @@ fn collect_modules(
     if missing_modules.is_empty() {
         Ok(modules)
     } else {
-        Err(missing_modules)
+        Err(format!(
+            "Error collecting modules, unable to locate: {}",
+            missing_modules.join(", ")
+        ))
     }
 }
 
@@ -198,11 +207,16 @@ fn build_dep_graph(modules: &[&ModuleTemplate]) -> DepGraph {
 ///
 /// Returns dependencies in bottom-up order, beginning with basis and proceeding
 /// to modules later in the chain.
-fn linearise_deps(deps: &DepGraph) -> Result<Vec<String>, ()> {
+fn linearise_deps(deps: &DepGraph) -> Result<Vec<String>, String> {
     // Do a topological sort, which will give us the dependencies in top-down order,
     // beginning from the last in the chain and ending in basis. Reverse to get the
     // bottom-up ordering.
-    let mut linear_dep_idx = toposort(deps, None).map_err(|_| ())?;
+    let mut linear_dep_idx = toposort(deps, None).map_err(|cycle| {
+        format!(
+            "Error: dependency graph contains a cycle involving module \"{}\"",
+            &deps[cycle.node_id()]
+        )
+    })?;
     linear_dep_idx.reverse();
     Ok(linear_dep_idx
         .into_iter()
@@ -233,17 +247,30 @@ fn instantiate_module_templates(
 
 impl Module {
     /// Write the instantiated module to a file in the given directory.
-    fn write_out(&self, build_directory: &Path) -> Result<(), io::Error> {
-        let mut file = File::create(module_path(&self.name, build_directory))?;
+    fn write_out(&self, build_directory: &Path) -> Result<(), String> {
+        let mod_path = module_path(&self.name, build_directory);
+        let mut file = File::create(&mod_path)
+            .map_err(|e| format!("Error while creating module file {:?}: {}", mod_path, e))?;
         file.write_all(self.file_contents.as_bytes())
+            .map_err(|e| format!("Error while writing module to {:?}: {}", mod_path, e))
     }
 }
 
+fn template_load_err(name: &str, e: tera::Error) -> String {
+    format!("Failed to load template {}: {}", name, e)
+}
+
+fn template_render_err<E: Display>(name: &str, e: E) -> String {
+    format!("Failed to render template {}: {}", name, e)
+}
+
 /// Load meta-templates required to generate the build module.
-fn load_build_templates() -> Result<Tera, tera::Error> {
+fn load_build_templates() -> Result<Tera, String> {
     let mut tera = Tera::default();
-    tera.add_raw_template("buildScript.sml", include_str!("templates/buildScript.sml"))?;
-    tera.add_raw_template("Holmakefile", include_str!("templates/Holmakefile"))?;
+    tera.add_raw_template(T_BUILD, include_str!("templates/buildScript.sml"))
+        .map_err(|e| template_load_err(T_BUILD, e))?;
+    tera.add_raw_template(T_HOLMAKE, include_str!("templates/Holmakefile"))
+        .map_err(|e| template_load_err(T_HOLMAKE, e))?;
     Ok(tera)
 }
 
@@ -257,17 +284,20 @@ fn create_build_script(
     entry_function: &str,
     sexpr_path: &Path,
     tera: &Tera,
-) -> Result<(), io::Error> {
-    let mut file = File::create(module_path("build", build_dir))?;
+) -> Result<(), String> {
+    let mut file = File::create(module_path("build", build_dir))
+        .map_err(|e| template_render_err(T_BUILD, e))?;
 
     let mut context = Context::default();
     context.insert("terminal_module", terminal_module);
     context.insert("entry_function", entry_function);
     context.insert("sexpr_file", &sexpr_path.to_string_lossy());
 
-    // FIXME: error handling
-    let file_contents = tera.render("buildScript.sml", &context).unwrap();
+    let file_contents = tera
+        .render(T_BUILD, &context)
+        .map_err(|e| template_render_err(T_BUILD, e))?;
     file.write_all(file_contents.as_bytes())
+        .map_err(|e| template_render_err(T_BUILD, e))
 }
 
 fn create_holmakefile(
@@ -275,8 +305,9 @@ fn create_holmakefile(
     cakeml_dir: &Path,
     include_dirs: &[PathBuf],
     tera: &Tera,
-) -> Result<(), io::Error> {
-    let mut file = File::create(build_dir.join("Holmakefile"))?;
+) -> Result<(), String> {
+    let mut file =
+        File::create(build_dir.join(T_HOLMAKE)).map_err(|e| template_render_err(T_HOLMAKE, e))?;
 
     let string_include_dirs = include_dirs
         .iter()
@@ -287,20 +318,24 @@ fn create_holmakefile(
     context.insert("cakeml_dir", &cakeml_dir.to_string_lossy());
     context.insert("include_dirs", &string_include_dirs);
 
-    // FIXME: error handling
-    let file_contents = tera.render("Holmakefile", &context).unwrap();
+    let file_contents = tera
+        .render(T_HOLMAKE, &context)
+        .map_err(|e| template_render_err(T_HOLMAKE, e))?;
     file.write_all(file_contents.as_bytes())
+        .map_err(|e| template_render_err(T_HOLMAKE, e))
 }
 
-fn main() {
+fn main_with_result() -> Result<(), String> {
+    env_logger::init();
+
     let opts = Opts::from_args();
 
-    println!("{:?}", opts);
+    debug!("{:?}", opts);
 
-    let module_templates = collect_modules(&opts.module_names, &opts.search_dirs).unwrap();
+    let module_templates = collect_modules(&opts.module_names, &opts.search_dirs)?;
 
     for (_, mt) in &module_templates {
-        println!(
+        debug!(
             "{}, depends: {:?}, from: {:?}",
             mt.name, mt.dependencies, mt.file_location
         );
@@ -309,36 +344,44 @@ fn main() {
     let flat_modules: Vec<_> = module_templates.values().collect();
     let dep_graph = build_dep_graph(&flat_modules);
 
-    println!("{:#?}", dep_graph);
+    debug!("{:#?}", dep_graph);
 
-    let linear_deps = linearise_deps(&dep_graph).expect("dependency graph contains cycles!");
+    let linear_deps = linearise_deps(&dep_graph)?;
 
-    println!("{:?}", linear_deps);
+    debug!("{:?}", linear_deps);
 
     let instantiated_modules = instantiate_module_templates(module_templates, &linear_deps);
 
     for module in instantiated_modules {
-        module.write_out(&opts.build_dir).unwrap();
+        module.write_out(&opts.build_dir)?;
     }
 
-    let tera = load_build_templates().unwrap();
+    let tera = load_build_templates()?;
     let terminal_module = linear_deps.last().unwrap();
-    let sexpr_path = get_sexpr_path(&opts.build_dir).unwrap();
+    let sexpr_path = get_sexpr_path(&opts.build_dir)
+        .map_err(|e| format!("Failed to canonicalize path for s-expression: {}", e))?;
     create_build_script(
         &opts.build_dir,
         terminal_module,
         &opts.entry_point,
         &sexpr_path,
         &tera,
-    )
-    .unwrap();
-    create_holmakefile(&opts.build_dir, &opts.cakeml_dir, &opts.hol_includes, &tera).unwrap();
+    )?;
+    create_holmakefile(&opts.build_dir, &opts.cakeml_dir, &opts.hol_includes, &tera)?;
 
-    let holmake = Holmake::new(&opts.holmake);
-    holmake.run(&opts.build_dir).unwrap();
+    Holmake::new(&opts.holmake).run(&opts.build_dir)?;
 
-    BinaryCompiler::new(&opts.cakeml_bin)
-        .sexp(true)
-        .compile(&sexpr_path, &opts.build_dir, ASM_FILENAME)
-        .expect("binary compiler failed");
+    BinaryCompiler::new(&opts.cakeml_bin).sexp(true).compile(
+        &sexpr_path,
+        &opts.build_dir,
+        ASM_FILENAME,
+    )?;
+
+    Ok(())
+}
+
+fn main() {
+    if let Err(error_message) = main_with_result() {
+        eprintln!("{}", error_message);
+    }
 }

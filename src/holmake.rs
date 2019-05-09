@@ -1,4 +1,3 @@
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -16,11 +15,20 @@ impl Holmake {
     }
 
     /// Run Holmake in the given directory
-    pub fn run(&self, build_dir: &Path) -> Result<(), io::Error> {
-        let exit_status = Command::new(&self.path).current_dir(build_dir).status()?;
-        if !exit_status.success() {
-            panic!("Holmake failed");
-        }
-        Ok(())
+    pub fn run(&self, build_dir: &Path) -> Result<(), String> {
+        Command::new(&self.path)
+            .current_dir(build_dir)
+            .output()
+            .map_err(|e| format!("Failed to execute Holmake: {}", e))
+            .and_then(|output| {
+                if output.status.success() {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Error: Holmake failed with stderr:\n{}",
+                        String::from_utf8_lossy(&output.stderr)
+                    ))
+                }
+            })
     }
 }
