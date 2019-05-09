@@ -3,7 +3,7 @@ open preamble basis;
 val _ = new_theory "apple";
 
 (* Replace by a translation extends call *)
-require basis;
+require basisProg;
 
 val _ = ml_prog_update (open_module "Apple");
 

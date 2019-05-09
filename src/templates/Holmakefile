@@ -1,8 +1,9 @@
 CAKEML_DIR = {{ cakeml_dir }}
 INCLUDES = $(CAKEML_DIR)/characteristic $(CAKEML_DIR)/basis $(CAKEML_DIR)/misc $(CAKEML_DIR)/translator \
            $(CAKEML_DIR)/semantics $(CAKEML_DIR)/unverified/sexpr-bootstrap $(CAKEML_DIR)/compiler/parsing \
-	   {% for include_dir in include_dirs %}{{ include_dir }}{% if not loop.last %} \{% endif %}
-	   {% endfor %}
+{% for include_dir in include_dirs %}           {{ include_dir }}{% if not loop.last %} \{% endif %}
+{% endfor %}
+
 OPTIONS = QUIT_ON_FAILURE
 
 THYFILES = $(patsubst %Script.sml,%Theory.uo,$(wildcard *.sml))

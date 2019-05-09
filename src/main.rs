@@ -1,4 +1,5 @@
 use self::cli::Opts;
+use self::holmake::Holmake;
 use petgraph::algo::toposort;
 use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
@@ -9,7 +10,9 @@ use structopt::StructOpt;
 use tera::{Context, Tera};
 
 mod cli;
+mod holmake;
 
+const BASIS: &str = "basisProg";
 const REQUIRE_KEYWORD: &str = "require ";
 
 /// Directed dependency graph, with edges from modules to their dependencies.
@@ -134,7 +137,7 @@ fn collect_modules(
                         .dependencies
                         .iter()
                         .filter(|dep_name| {
-                            dep_name.as_str() != "basis" && !modules.contains_key(dep_name.as_str())
+                            dep_name.as_str() != BASIS && !modules.contains_key(dep_name.as_str())
                         })
                         .cloned(),
                 );
@@ -163,8 +166,8 @@ fn build_dep_graph(modules: &[&ModuleTemplate]) -> DepGraph {
 
     let mut indices = HashMap::new();
 
-    let basis_idx = graph.add_node("basis".to_string());
-    indices.insert("basis", basis_idx);
+    let basis_idx = graph.add_node(BASIS.to_string());
+    indices.insert(BASIS, basis_idx);
 
     // Add nodes for all the modules
     for module in modules {
@@ -317,6 +320,9 @@ fn main() {
     let terminal_module = linear_deps.last().unwrap();
     create_build_script(&opts.build_dir, terminal_module, &opts.entry_point, &tera).unwrap();
     create_holmakefile(&opts.build_dir, &opts.cakeml_dir, &opts.hol_includes, &tera).unwrap();
+
+    let holmake = Holmake::new(&opts.holmake);
+    holmake.run(&opts.build_dir).unwrap();
 
     println!("done");
 }

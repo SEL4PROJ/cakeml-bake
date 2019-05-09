@@ -25,4 +25,9 @@ pub struct Opts {
     /// Will be built using Holmake
     #[structopt(long)]
     pub hol_includes: Vec<PathBuf>,
+    /// Path to Holmake binary
+    ///
+    /// Will use the Holmake from $PATH if none is provided
+    #[structopt(long, default_value = "Holmake")]
+    pub holmake: PathBuf,
 }
