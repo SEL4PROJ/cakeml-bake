@@ -21,7 +21,10 @@ pub struct Opts {
     pub build_dir: PathBuf,
     /// Top-level CakeML function to run when the program executes
     #[structopt(long, default_value = "main")]
-    pub entry_point: String,
+    pub cakeml_entry_point: String,
+    /// Name to use for the top-level function symbol in the generated assembly
+    #[structopt(long, default_value = "main")]
+    pub asm_entry_point: String,
     /// Path to a checkout of the CakeML compiler repository
     #[structopt(long)]
     pub cakeml_dir: PathBuf,

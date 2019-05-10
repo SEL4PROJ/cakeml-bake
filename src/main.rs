@@ -365,7 +365,7 @@ fn main_with_result() -> Result<(), String> {
     create_build_script(
         &opts.build_dir,
         terminal_module,
-        &opts.entry_point,
+        &opts.cakeml_entry_point,
         &sexpr_path,
         &tera,
     )?;
@@ -373,11 +373,10 @@ fn main_with_result() -> Result<(), String> {
 
     Holmake::new(&opts.holmake).run(&opts.build_dir)?;
 
-    BinaryCompiler::new(&opts.cakeml_bin).sexp(true).compile(
-        &sexpr_path,
-        &opts.build_dir,
-        ASM_FILENAME,
-    )?;
+    BinaryCompiler::new(&opts.cakeml_bin)
+        .sexp(true)
+        .asm_entry_point(opts.asm_entry_point.clone())
+        .compile(&sexpr_path, &opts.build_dir, ASM_FILENAME)?;
 
     Ok(())
 }
