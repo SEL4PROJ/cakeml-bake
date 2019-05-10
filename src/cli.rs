@@ -1,8 +1,14 @@
+use git_version::git_version;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
 #[derive(Debug, Clone, StructOpt)]
-#[structopt(rename_all = "kebab-case")]
+#[structopt(
+    rename_all = "kebab-case",
+    raw(
+        version = "&*Box::leak(format!(\"{}-{}\", crate_version!(), git_version!()).into_boxed_str())"
+    )
+)]
 pub struct Opts {
     /// Names of the modules to build
     #[structopt(long)]
@@ -11,7 +17,7 @@ pub struct Opts {
     #[structopt(long)]
     pub search_dirs: Vec<PathBuf>,
     /// Directory to build in
-    #[structopt(long)]
+    #[structopt(long, default_value = "build")]
     pub build_dir: PathBuf,
     /// Top-level CakeML function to run when the program executes
     #[structopt(long, default_value = "main")]

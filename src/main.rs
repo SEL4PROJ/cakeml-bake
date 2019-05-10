@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate clap;
 
 use self::binary_compiler::BinaryCompiler;
 use self::cli::Opts;
