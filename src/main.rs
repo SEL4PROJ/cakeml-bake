@@ -6,6 +6,7 @@ extern crate clap;
 use self::binary_compiler::BinaryCompiler;
 use self::cli::Opts;
 use self::holmake::Holmake;
+use self::target::target_word_size_bits;
 use petgraph::algo::toposort;
 use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
@@ -19,14 +20,17 @@ use tera::{Context, Tera};
 mod binary_compiler;
 mod cli;
 mod holmake;
+mod target;
 
 const BASIS: &str = "basisProg";
+const TARGET_INFO: &str = "targetInfo";
 const REQUIRE_KEYWORD: &str = "require ";
 const SEXPR_FILENAME: &str = "program.sexp";
 const ASM_FILENAME: &str = "program.S";
 
 const T_BUILD: &str = "buildScript.sml";
 const T_HOLMAKE: &str = "Holmakefile";
+const T_TARGET_INFO: &str = "targetInfoScript.sml";
 
 /// Directed dependency graph, with edges from modules to their dependencies.
 type DepGraph = Graph<String, ()>;
@@ -150,7 +154,9 @@ fn collect_modules(
                         .dependencies
                         .iter()
                         .filter(|dep_name| {
-                            dep_name.as_str() != BASIS && !modules.contains_key(dep_name.as_str())
+                            dep_name.as_str() != BASIS
+                                && dep_name.as_str() != TARGET_INFO
+                                && !modules.contains_key(dep_name.as_str())
                         })
                         .cloned(),
                 );
@@ -273,7 +279,49 @@ fn load_build_templates() -> Result<Tera, String> {
         .map_err(|e| template_load_err(T_BUILD, e))?;
     tera.add_raw_template(T_HOLMAKE, include_str!("templates/Holmakefile"))
         .map_err(|e| template_load_err(T_HOLMAKE, e))?;
+    tera.add_raw_template(
+        T_TARGET_INFO,
+        include_str!("templates/targetInfoScript.sml"),
+    )
+    .map_err(|e| template_load_err(T_TARGET_INFO, e))?;
     Ok(tera)
+}
+
+/// Insert a synthetic module with information about the compilation target.
+fn add_target_info_module(
+    module_templates: &mut HashMap<String, ModuleTemplate>,
+    tera: &Tera,
+    target: &str,
+) -> Result<(), String> {
+    let word_size_bits = target_word_size_bits(target)?;
+
+    let mut context = Context::default();
+    context.insert("word_size_bytes", &(word_size_bits / 8));
+    context.insert("word_size_bits", &word_size_bits);
+    context.insert("target_name", target);
+
+    let file_contents = tera
+        .render(T_TARGET_INFO, &context)
+        .map_err(|e| template_render_err(T_TARGET_INFO, e))?;
+
+    let name_collision = module_templates.insert(
+        TARGET_INFO.into(),
+        ModuleTemplate {
+            name: TARGET_INFO.into(),
+            file_location: PathBuf::new(),
+            file_contents,
+            dependencies: vec!["basisProg".into()],
+        },
+    );
+
+    if name_collision.is_some() {
+        Err(format!(
+            "Name collision: you can't call your module {}",
+            TARGET_INFO
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn get_sexpr_path(build_dir: &Path) -> Result<PathBuf, io::Error> {
@@ -331,10 +379,12 @@ fn main_with_result() -> Result<(), String> {
     env_logger::init();
 
     let opts = Opts::from_args();
-
     debug!("{:?}", opts);
 
-    let module_templates = collect_modules(&opts.module_names, &opts.search_dirs)?;
+    let tera = load_build_templates()?;
+
+    let mut module_templates = collect_modules(&opts.module_names, &opts.search_dirs)?;
+    add_target_info_module(&mut module_templates, &tera, &opts.target)?;
 
     for (_, mt) in &module_templates {
         debug!(
@@ -358,7 +408,6 @@ fn main_with_result() -> Result<(), String> {
         module.write_out(&opts.build_dir)?;
     }
 
-    let tera = load_build_templates()?;
     let terminal_module = linear_deps.last().unwrap();
     let sexpr_path = get_sexpr_path(&opts.build_dir)
         .map_err(|e| format!("Failed to canonicalize path for s-expression: {}", e))?;
@@ -376,6 +425,7 @@ fn main_with_result() -> Result<(), String> {
     BinaryCompiler::new(&opts.cakeml_bin)
         .sexp(true)
         .asm_entry_point(opts.asm_entry_point.clone())
+        .target(opts.target.clone())
         .compile(&sexpr_path, &opts.build_dir, ASM_FILENAME)?;
 
     Ok(())

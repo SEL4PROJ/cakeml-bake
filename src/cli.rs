@@ -43,4 +43,7 @@ pub struct Opts {
     /// Will use the `cake` from $PATH if none is provided
     #[structopt(long, default_value = "cake")]
     pub cakeml_bin: PathBuf,
+    /// Compilation target
+    #[structopt(long, default_value = "x64")]
+    pub target: String,
 }
