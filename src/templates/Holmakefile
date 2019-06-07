@@ -34,5 +34,5 @@ DEPS = $(patsubst %,%.uo,$(BARE_THYS1)) $(patsubst %,%.uo,$(BARE_THYS2)) $(patsu
        $(patsubst %,%.uo,$(BARE_THYS4)) $(patsubst %,%.uo,$(BARE_THYS4)) $(PARENTHEAP)
 
 $(HOLHEAP): $(DEPS)
-	$(protect buildheap) -b $(PARENT_HOLHEAP) -o $(HOLHEAP) $(BARE_THYS1) $(BARE_THYS2) $(BARE_THYS3) $(BARE_THYS4) $(BARE_THYS5)
+	$(HOLDIR)/bin/buildheap -b $(PARENT_HOLHEAP) -o $(HOLHEAP) $(BARE_THYS1) $(BARE_THYS2) $(BARE_THYS3) $(BARE_THYS4) $(BARE_THYS5)
 endif
