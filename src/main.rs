@@ -11,6 +11,7 @@ use petgraph::algo::toposort;
 use petgraph::Graph;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
+use std::fs::DirBuilder;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -324,6 +325,13 @@ fn add_target_info_module(
     }
 }
 
+fn create_build_dir(build_dir: &Path) -> Result<(), String> {
+    DirBuilder::new()
+        .recursive(true)
+        .create(build_dir)
+        .map_err(|e| format!("Unable to create build directory {:?}: {}", build_dir, e))
+}
+
 fn get_sexpr_path(build_dir: &Path) -> Result<PathBuf, io::Error> {
     Ok(build_dir.canonicalize()?.join(SEXPR_FILENAME))
 }
@@ -406,6 +414,7 @@ fn main_with_result() -> Result<(), String> {
 
     let instantiated_modules = instantiate_module_templates(module_templates, &linear_deps);
 
+    create_build_dir(&opts.build_dir)?;
     for module in instantiated_modules {
         module.write_out(&opts.build_dir)?;
     }
