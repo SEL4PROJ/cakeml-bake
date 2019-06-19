@@ -391,6 +391,12 @@ fn main_with_result() -> Result<(), String> {
     let opts = Opts::from_args();
     debug!("{:?}", opts);
 
+    if opts.module_names.is_empty() {
+        return Err(format!(
+            "You must provide at least one module name to build, see --module-names and --help"
+        ));
+    }
+
     let tera = load_build_templates()?;
 
     let mut module_templates = collect_modules(&opts.module_names, &opts.search_dirs)?;
