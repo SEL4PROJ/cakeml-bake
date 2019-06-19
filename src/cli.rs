@@ -46,7 +46,7 @@ pub struct Opts {
     /// Compilation target
     #[structopt(long, default_value = "x64")]
     pub target: String,
-    /// Generate code compatible with CakeML v2.0?
+    /// Generate code compatible with CakeML v2.0
     ///
     /// CakeML 2.0 is quite old, by default we support newer versions
     #[structopt(long)]
