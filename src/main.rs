@@ -333,6 +333,7 @@ fn create_build_script(
     terminal_module: &str,
     entry_function: &str,
     sexpr_path: &Path,
+    cakemlv2: bool,
     tera: &Tera,
 ) -> Result<(), String> {
     let mut file = File::create(module_path("build", build_dir))
@@ -342,6 +343,7 @@ fn create_build_script(
     context.insert("terminal_module", terminal_module);
     context.insert("entry_function", entry_function);
     context.insert("sexpr_file", &sexpr_path.to_string_lossy());
+    context.insert("cakemlv2", &cakemlv2);
 
     let file_contents = tera
         .render(T_BUILD, &context)
@@ -416,6 +418,7 @@ fn main_with_result() -> Result<(), String> {
         terminal_module,
         &opts.cakeml_entry_point,
         &sexpr_path,
+        opts.cakemlv2,
         &tera,
     )?;
     create_holmakefile(&opts.build_dir, &opts.cakeml_dir, &opts.hol_includes, &tera)?;
