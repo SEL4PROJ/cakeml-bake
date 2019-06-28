@@ -1,5 +1,6 @@
 use git_version::git_version;
 use std::path::PathBuf;
+use std::str::FromStr;
 use structopt::StructOpt;
 
 #[derive(Debug, Clone, StructOpt)]
@@ -43,6 +44,8 @@ pub struct Opts {
     /// Will use the `cake` from $PATH if none is provided
     #[structopt(long, default_value = "cake")]
     pub cakeml_bin: PathBuf,
+    #[structopt(long)]
+    pub sexpr_splice: Option<SExprSplice>,
     /// Compilation target
     #[structopt(long, default_value = "x64")]
     pub target: String,
@@ -51,4 +54,36 @@ pub struct Opts {
     /// CakeML 2.0 is quite old, by default we support newer versions
     #[structopt(long)]
     pub cakemlv2: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SExprSplice {
+    pub after_module: Option<String>,
+    pub path: PathBuf,
+}
+
+impl FromStr for SExprSplice {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        let parts: Vec<_> = s.splitn(2, ',').collect();
+        match parts.len() {
+            1 => {
+                let path = PathBuf::from_str(s).map_err(|e| format!("Bad path {:?}: {}", s, e))?;
+                Ok(SExprSplice {
+                    after_module: None,
+                    path,
+                })
+            }
+            2 => {
+                let path =
+                    PathBuf::from_str(&parts[1]).map_err(|e| format!("Bad path {:?}: {}", s, e))?;
+                Ok(SExprSplice {
+                    after_module: Some(parts[0].into()),
+                    path,
+                })
+            }
+            _ => unreachable!(),
+        }
+    }
 }

@@ -21,6 +21,7 @@ use tera::{Context, Tera};
 mod binary_compiler;
 mod cli;
 mod holmake;
+mod sexpr;
 mod target;
 
 const BASIS: &str = "basisProg";
@@ -391,6 +392,7 @@ fn main_with_result() -> Result<(), String> {
     let opts = Opts::from_args();
     debug!("{:?}", opts);
 
+    /*
     if opts.module_names.is_empty() {
         return Err(format!(
             "You must provide at least one module name to build, see --module-names and --help"
@@ -445,6 +447,15 @@ fn main_with_result() -> Result<(), String> {
         .asm_entry_point(opts.asm_entry_point.clone())
         .target(opts.target.clone())
         .compile(&sexpr_path, &opts.build_dir, ASM_FILENAME)?;
+    */
+
+    if let Some(splice_sexpr) = opts.sexpr_splice {
+        sexpr::splice_in_sexpr_file(
+            &opts.build_dir.join(SEXPR_FILENAME),
+            &splice_sexpr.path,
+            splice_sexpr.after_module.as_ref().map(String::as_str),
+        )?;
+    }
 
     Ok(())
 }
