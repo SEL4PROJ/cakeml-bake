@@ -1,9 +1,9 @@
-open preamble basis;
+open preamble basis targetInfoTheory;
 
 val _ = new_theory "apple";
 
 (* Replace by a translation extends call *)
-require basisProg;
+require basisProg targetInfo;
 
 val _ = ml_prog_update (open_module "Apple");
 
